@@ -1,0 +1,10 @@
+ultralytics==8.4.178
+ultralytics-thop
+onnx
+onnxruntime
+opencv-python
+numpy
+pandas
+scipy
+matplotlib
+pyyaml
