@@ -5,7 +5,7 @@ A Reproducible Study on GC10-DET, NEU-DET and Severstal*. Every number in the pa
 `notebooks/AWF_YOLO_paper_notebook_v3.ipynb` from the CSV files written by `scripts/evaluate.py`.
 
 ## Model
-**AWF-YOLO = YOLO11n in which the five stride-2 convolutions of the backbone are replaced by an Adaptive Wavelet
+**AWF-YOLO** (AWF: adaptive wavelet-based frequency) **= YOLO11n in which the five stride-2 convolutions of the backbone are replaced by an Adaptive Wavelet
 Bottleneck (AW-B).** The two stride-2 convolutions of the neck, the C3k2 blocks, SPPF, C2PSA and the detection head
 are unchanged. AW-B: one-level Haar DWT (LL, LH, HL, HH all kept) → residual depthwise 3×3 refinement →
 input-adaptive per-sub-band gate → 1×1 projection (`awf/modules.py`).
@@ -17,6 +17,7 @@ input-adaptive per-sub-band gate → 1×1 projection (`awf/modules.py`).
 | Full four-component model (AW-B + MRFF + C2PSA-CAA + Inner-SIoU; not retained) | `awf-yolo` |
 | Ablation steps | `awf-awb-mrff`, `awf-awb-mrff-caa` |
 | Class-imbalance variants | `awf-awb@cls=focal`, `awf-awb@cls=weighted` |
+| AW-B controls (Section 5.12): space-to-depth instead of Haar, no gate, no refinement | `awf-awb@down=spd`, `awf-awb@gate=0`, `awf-awb@refine=0` |
 
 `awf/fast.py` provides a numerically identical, faster AW-B forward pass (grouped-convolution Haar transform)
 for latency measurement: `from awf.fast import fast_patch; fast_patch(YOLO('best.pt').model)`.
@@ -89,8 +90,8 @@ python scripts/evaluate.py --data data/gc10/gc10.yaml --out results/gc10 \
 3. Put the prepared datasets there as `data/gc10.tar` and `data/neu.tar` (tar archives of the `gc10/` and `neu/`
    folders made by the prepare scripts). Severstal is downloaded by notebook cell S1 (needs a Kaggle API key).
 4. Open `notebooks/AWF_YOLO_paper_notebook_v3.ipynb` in Colab on a GPU runtime and run, in order:
-   cells 1–4 (setup), 5 (training queue), 6–18 (evaluation and analyses), N0–N8 (input-size experiment)
-   and S1–S5 (Severstal). The table at the top of the notebook lists which cell produces which table or figure.
+   cells 1–4 (setup), 5 (training queue), 6–18 (evaluation and analyses), N0–N8 (input-size experiment),
+   S1–S5 (Severstal) and R1–R6 (additional analyses and AW-B controls). The table at the top of the notebook lists which cell produces which table or figure.
    Training cells skip finished runs and resume interrupted ones, so re-run them after a disconnect.
 
 Training time on an NVIDIA T4: about 2.2 h per GC10-DET run, 0.8 h per NEU-DET run and 3.8 h per Severstal run

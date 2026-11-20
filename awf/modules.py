@@ -31,25 +31,56 @@ def haar_dwt(x):
     return ll, lh, hl, hh
 
 
-class AWB(nn.Module):
-    """Adaptive Wavelet Bottleneck: replaces a stride-2 convolution (c1 -> c2, H x W -> H/2 x W/2)."""
+def space_to_depth(x):
+    """Pixel-unshuffle (space-to-depth, as in SPD-Conv) returned in the same band-major layout as
+    torch.cat(haar_dwt(x), 1): four groups of C channels holding the (0,0), (0,1), (1,0), (1,1) pixels."""
+    if x.shape[-2] % 2 or x.shape[-1] % 2:
+        x = F.pad(x, (0, x.shape[-1] % 2, 0, x.shape[-2] % 2), mode="replicate")
+    return torch.cat((x[..., 0::2, 0::2], x[..., 0::2, 1::2], x[..., 1::2, 0::2], x[..., 1::2, 1::2]), 1)
 
-    def __init__(self, c1, c2, k=3):
+
+class AWB(nn.Module):
+    """Adaptive Wavelet Bottleneck: replaces a stride-2 convolution (c1 -> c2, H x W -> H/2 x W/2).
+
+    transform="haar" is the block of the paper. The control variants keep everything else identical:
+    transform="spd"  uses space-to-depth (pixel-unshuffle) instead of the Haar transform,
+    refine=False     removes the residual depthwise refinement,
+    gate=False       removes the sub-band gate (w = 1).
+    """
+
+    def __init__(self, c1, c2, k=3, transform="haar", refine=True, gate=True):
         super().__init__()
         c4 = 4 * c1
         self.c1 = c1
-        self.refine = nn.Sequential(nn.Conv2d(c4, c4, k, 1, k // 2, groups=c4, bias=False),
-                                    nn.BatchNorm2d(c4), nn.SiLU())
-        self.gate = nn.Conv2d(c4, 4, 1, groups=4, bias=True)  # one adaptive weight per sub-band
-        nn.init.zeros_(self.gate.weight)
-        nn.init.zeros_(self.gate.bias)                          # 2*sigmoid(0) = 1 -> identity at start
+        self.transform = transform
+        self.refine = (nn.Sequential(nn.Conv2d(c4, c4, k, 1, k // 2, groups=c4, bias=False),
+                                     nn.BatchNorm2d(c4), nn.SiLU()) if refine else None)
+        self.gate = nn.Conv2d(c4, 4, 1, groups=4, bias=True) if gate else None  # one adaptive weight per sub-band
+        if self.gate is not None:
+            nn.init.zeros_(self.gate.weight)
+            nn.init.zeros_(self.gate.bias)                      # 2*sigmoid(0) = 1 -> identity at start
         self.fuse = Conv(c4, c2, 1, 1)
 
+    def gate_weights(self, x):
+        """Sub-band weights w (B, 4) for input x; ones if the gate is disabled (for analysis)."""
+        s = self._split(x)
+        if self.refine is not None:
+            s = s + self.refine(s)
+        if self.gate is None:
+            return torch.ones(x.shape[0], 4, device=x.device, dtype=x.dtype)
+        return 2 * torch.sigmoid(self.gate(F.adaptive_avg_pool2d(s, 1))).flatten(1)
+
+    def _split(self, x):
+        # getattr keeps checkpoints saved before these options existed loadable (they are Haar blocks)
+        return space_to_depth(x) if getattr(self, "transform", "haar") == "spd" else torch.cat(haar_dwt(x), 1)
+
     def forward(self, x):
-        s = torch.cat(haar_dwt(x), 1)
-        s = s + self.refine(s)
-        w = 2 * torch.sigmoid(self.gate(F.adaptive_avg_pool2d(s, 1)))   # (B, 4, 1, 1)
-        s = s * w.repeat_interleave(self.c1, dim=1)
+        s = self._split(x)
+        if self.refine is not None:
+            s = s + self.refine(s)
+        if self.gate is not None:
+            w = 2 * torch.sigmoid(self.gate(F.adaptive_avg_pool2d(s, 1)))   # (B, 4, 1, 1)
+            s = s * w.repeat_interleave(self.c1, dim=1)
         return self.fuse(s)
 
 

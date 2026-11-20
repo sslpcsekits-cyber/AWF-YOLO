@@ -8,6 +8,9 @@ Variant strings (used as `model=` for training):
     awf-awb-mrff-caa   + AWB + MRFF + C2PSA-CAA
     awf-yolo           full model: AWB + MRFF + C2PSA-CAA + Inner-SIoU
 Options are appended after '@', e.g.  awf-yolo@ratio=0.8   awf-yolo@cls=focal   awf-yolo@k=7
+AW-B controls: awf-awb@down=spd   awf-awb@gate=0   awf-awb@refine=0   (see DEFAULTS below)
+Naming: the paper's "AWF-YOLO" (AWF = adaptive wavelet-based frequency) is the variant awf-awb; the
+variant awf-yolo is the paper's "full four-component model".
 """
 import torch
 import torch.nn as nn
@@ -26,7 +29,12 @@ VARIANTS = {
     "awf-awb-mrff-caa": dict(awb=True,  mrff=True,  caa=True,  inner=False),
     "awf-yolo":         dict(awb=True,  mrff=True,  caa=True,  inner=True),
 }
-DEFAULTS = dict(ratio=0.75, k=11, cls="bce", gamma=1.5, alpha=0.25)
+DEFAULTS = dict(ratio=0.75, k=11, cls="bce", gamma=1.5, alpha=0.25, down="haar", refine=1, gate=1)
+# Control experiments for AW-B (GC10-DET), all built on `awf-awb`:
+#   awf-awb@down=spd            same block with space-to-depth (pixel-unshuffle) instead of the Haar transform
+#   awf-awb@gate=0              AW-B without the sub-band gate
+#   awf-awb@refine=0            AW-B without the depthwise refinement
+#   awf-awb@refine=0,gate=0     Haar transform + 1x1 projection only (HWD-style downsampling)
 
 
 def parse_variant(cfg):
@@ -56,7 +64,10 @@ def build_layers(spec, nc, ch=3):
         return m.i
 
     def down(c1, c2):
-        return AWB(c1, c2) if awb else Conv(c1, c2, 3, 2)
+        if not awb:
+            return Conv(c1, c2, 3, 2)
+        return AWB(c1, c2, transform=str(spec.get("down", "haar")), refine=bool(int(spec.get("refine", 1))),
+                   gate=bool(int(spec.get("gate", 1))))
 
     # Backbone (YOLO11n channels: 16-32-64-128-256)
     add(down(ch, 16))                                   # 0  P1/2

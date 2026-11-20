@@ -46,7 +46,8 @@ batch = {
     "bboxes": torch.tensor([[0.5, 0.5, 0.2, 0.1], [0.3, 0.6, 0.05, 0.4], [0.7, 0.2, 0.3, 0.3]], device=dev),
 }
 print(f"\n{'variant':<34}{'params':>12}{'GFLOPs':>9}  loss")
-for name in list(VARIANTS) + ["awf-yolo@cls=focal", "awf-yolo@ratio=0.8"]:
+for name in list(VARIANTS) + ["awf-yolo@cls=focal", "awf-yolo@ratio=0.8", "awf-awb@down=spd", "awf-awb@gate=0",
+                               "awf-awb@refine=0", "awf-awb@refine=0,gate=0"]:
     m = AWFDetectionModel(name, nc=10, verbose=False).to(dev)
     m.args = cfg
     m.train()

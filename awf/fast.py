@@ -22,8 +22,9 @@ _HAAR = torch.tensor([[0.5, 0.5, 0.5, 0.5],
 
 def _fast_forward(self, x):
     B, C, H, W = x.shape
-    if H % 2 or W % 2:
-        return AWB.forward(self, x)                     # odd sizes: original path (replicate padding)
+    if (H % 2 or W % 2 or getattr(self, "transform", "haar") != "haar"
+            or self.refine is None or self.gate is None):     # odd sizes and control variants: original path
+        return AWB.forward(self, x)
     key = (C, x.dtype, x.device)
     cache = self.__dict__.setdefault("_haar_w", {})
     if key not in cache:
